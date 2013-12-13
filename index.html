@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.6.4/leaflet.css" />
+<!--[if lte IE 8]>
+    <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.6.4/leaflet.ie.css" />
+<![endif]-->
+<script src="http://cdn.leafletjs.com/leaflet-0.6.4/leaflet.js"></script>
+<script type="text/javascript" src="raphael/raphael.js"></script>
+<script type="text/javascript" src="piechart.js"></script>
+<script type="text/javascript" src="cities-poly.js"></script>
+
+<style type="text/css">
+	body, html {
+		height: 100%;
+		margin: 0;
+	}
+	#map {
+		height: 100%;
+	}
+	.info {
+	    padding: 6px 20px;
+	    font: 14px/16px  sans-serif;
+	    background: white;
+	    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        opacity: .8;
+        text-align: right;
+	}
+	.info h4 {
+    	margin: 0 0 5px;
+    	color: black;
+	}
+    .info h3 {
+        margin: 0 0 5px;
+        color: black;
+    }
+</style>
+</head>
+<body>
+	<div id="map"></div>
+
+<script>
+//////////////////////////////////////////////////////////////////////////////
+// Function to convert numbers to comma-separated format
+//////////////////////////////////////////////////////////////////////////////
+function numberWithCommas(x) {
+    var parts = x.toString().split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return parts.join(".");
+}
+</script>
+<script>
+
+//////////////////////////////////////////////////////////////////////////////
+// Setting-up leaflet.js to populate with cities data and format to interactive map
+//////////////////////////////////////////////////////////////////////////////
+
+var map = L.map('map', {
+    center: [45, 0],
+    zoom: 2,
+    maxZoom: 5,
+    minZoom: 2
+});
+var geoJson;
+var cityColor;
+
+/////////////////// Adding customized tile layer for background map
+
+var cloudmade = L.tileLayer('http://{s}.tile.cloudmade.com/{key}/{styleId}/256/{z}/{x}/{y}.png', 
+		{	attribution: 'Colin Rennie',
+			key: '6d2e7a6f0590453d8a043979d57ab347',
+			styleId: 77736
+		}).addTo(map);
+
+/////////////////// Formatting cities' colors based on cost of living
+
+function getColor(d) {
+           d > 3000 ? cityColor = '#BA413F' :
+           d > 2000 ? cityColor = '#BA723F' :
+           d > 1500 ? cityColor = '#BAB03F' :
+           d > 1000 ? cityColor = '#97BA3F' :
+           d > 500  ? cityColor = '#62BA3F' :
+           d > 250  ? cityColor = '#3FBA4A' :
+           d > 0    ? cityColor = '#17751B' :
+                      cityColor = 'black';
+    setCityColor(cityColor);
+    return cityColor;
+}
+
+/////////////////// Also set page title elements to the city's color on mouseover
+
+function setCityColor(clr) {
+    document.getElementsByTagName('h3')[0].style.color = clr;
+    document.getElementsByTagName('h3')[1].style.color = clr;
+}
+
+function style(feature) {
+    return {
+        radius: 6,
+        fillColor: getColor(feature.properties.total),
+        weight: 1,
+        opacity: 0.25,
+        color: 'black',
+        fillOpacity: 0.7
+    };
+}
+
+function highlightFeature(e) {
+    var layer = e.target;
+
+    layer.setStyle({
+        radius: 20,
+        weight: 5,
+        color: 'white',
+        dashArray: '',
+        fillOpacity: 0.7
+    });
+
+    if (!L.Browser.ie && !L.Browser.opera) {
+        layer.bringToFront();
+    }
+    info.update(layer.feature.properties);
+    getColor(layer.feature.properties.total);
+}
+
+function resetHighlight(e) {
+    //geoJson.resetStyle(e.target); // Not working with "point" data
+    //info.update();
+
+    var layer = e.target;
+
+    layer.setStyle({
+        weight: 1,
+        color: 'black',
+        fillOpacity: 0.7,
+        radius: 6,
+        opacity: 0.25,
+    });
+
+}
+
+function zoomToFeature(e) {
+    map.fitBounds(e.target.getBounds());
+}
+
+function onEachFeature(feature, layer) {
+    layer.on({
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: zoomToFeature
+    });
+}
+
+var geojsonMarkerOptions = {
+    radius: 8,
+    fillColor: "#BA413F",
+    color: "#000",
+    weight: 1,
+    opacity: 1,
+    fillOpacity: 0.8
+};
+
+var info = L.control();
+
+info.onAdd = function (map) {
+    this._div = L.DomUtil.create('div', 'info'); // create a div with a class "info"
+    this.update();
+    return this._div;
+};
+
+// method that we will use to update the control based on feature properties passed
+info.update = function (props) {
+    this._div.innerHTML = '<h4>Monthly Cost of Living in World Cities</h4>' +  (props ?
+        '<h3><b>' + props.name + '</b></h3><br /> ' + 
+        'apartment: <b>' + numberWithCommas( props.apartment.toFixed(2) ) + '</b><br />' + 
+        'groceries: <b>' + numberWithCommas( props.groceries.toFixed(2) ) + '</b><br />' + 
+        'utilities: <b>' + numberWithCommas( props.utilities.toFixed(2) ) + '</b><br />' + 
+        'transportation: <b>' + numberWithCommas( props.transportation.toFixed(2) ) + '</b><br />' + 
+        'entertainment: <b>' + numberWithCommas( props.entertainment.toFixed(2) ) + '</b><br />' +
+        '<h3><b><br />Total (per mo.): $' + 
+            numberWithCommas( (props.entertainment+props.apartment+props.groceries+props.utilities+props.transportation).toFixed(2) ) + '</b></h3><br />' +
+        '<div id="holder"></div>' 
+        : '<br /><h3></h3><h3></h3><br />' );
+
+    if (props) {
+        var values = [props.apartment, props.groceries, props.utilities, props.transportation, props.entertainment],
+            labels = ["apartment", "groceries", "utilities", "transportation", "entertainment"];
+
+        makeChart(values, labels);  
+    }
+};
+
+function makeChart (values, labels) {
+
+    Raphael("holder", 275, 300).pieChart(150, 150, 75, values, labels, "#fff");
+}
+
+
+info.addTo(map);
+
+L.geoJson(cities, {
+    pointToLayer: function (feature, latlng) {
+        return L.circleMarker(latlng, style(feature));
+    },
+    onEachFeature: onEachFeature
+}).addTo(map);
+
+
+
+</script>
+
+</body>
+</html>
